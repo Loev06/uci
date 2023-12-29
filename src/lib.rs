@@ -1,20 +1,18 @@
-use bot::{self, ChessEngine, Move, Board, Perft};
+use bot::{self, ChessEngine, Move, Board, Perft, Eval};
 use std::io;
 
-const START_POS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const START_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const DEFAULT_DEPTH: u8 = 6;
 
 pub struct Uci {
     engine: ChessEngine,
-    position: String,
     ready: bool
 }
 
 impl Uci {
     pub fn new() -> Self {
         Self {
-            engine: ChessEngine::new(),
-            position: String::from(START_POS),
+            engine: ChessEngine::new(START_FEN),
             ready: true
         }
     }
@@ -25,6 +23,7 @@ impl Uci {
 
     pub fn run(&mut self) {
         println!("{}", Self::get_header());
+
         loop {
             let mut input = String::new();
             io::stdin()
@@ -42,6 +41,8 @@ impl Uci {
                 "position"   => self.position(args),
                 "go"         => self.go(args),
                 "d"          => self.d(),
+                "eval"       => self.eval(),
+                "run"        => self.run_bot(),
                 "quit"       => break,
                 other => println!("Unknown command: '{}'. Type 'help' for a list of commands.", other)
             }
@@ -59,6 +60,8 @@ List of known commands:
 - position   Set a position
 - go         Start thinking
 - d          Print current board
+- eval       Static eval of position
+- run        Run main function of the bot
 - quit       Quit.", 
             Self::get_header()
         );
@@ -99,7 +102,7 @@ uciok",
         let start_fen = if let Some(pos_type) = args.get(1) {
             match *pos_type {
                 "startpos" => {
-                    String::from(START_POS)
+                    String::from(START_FEN)
                 },
                 "fen" => args[2..moves_index.unwrap_or(args.capacity())].join(" "),
                 _ => return
@@ -130,19 +133,11 @@ uciok",
             }
         }
 
-        self.position = board.get_fen();
+        self.engine.set_board(board.get_fen().as_str());
         self.ready = true;
     }
 
     fn go(&mut self, args: Vec<&str>) {
-        let board = match Board::try_from_fen(&self.position) {
-            Ok(b) => b,
-            Err(_) => {
-                println!("Invalid position!");
-                return;
-            }
-        };
-
         let mut depth = DEFAULT_DEPTH;
 
         if let Some(s) = args.get(1) {
@@ -150,7 +145,8 @@ uciok",
                 let d = d.parse::<u8>().unwrap_or(1);
                 match *s {
                     "perft" => {
-                        Perft::new(board).verb_perft(d, true, false);
+                        let board = Board::try_from_fen(self.engine.get_board_fen().as_str()).expect("Engine returned an incorrect fen");
+                        Perft::new(board).verb_perft(d, false, false);
                         return;
                     },
                     "depth" => depth = d,
@@ -158,18 +154,22 @@ uciok",
                 }
             }
         }
-        println!("bestmove {}", self.engine.search(board, depth).0);
+        let search_res = self.engine.search(depth);
+        println!("info score cp {}", search_res.1);
+        println!("bestmove {}", search_res.0);
     }
 
     fn d(&self) {
-        let board =  match Board::try_from_fen(&self.position) {
-            Ok(b) => b,
-            Err(_) => {
-                println!("Invalid position!");
-                return;
-            }
-        };
-        println!("{}", board);
+        println!("{}", self.engine.get_board_string());
+    }
+
+    fn eval(&self) {
+        let board = Board::try_from_fen(self.engine.get_board_fen().as_str()).expect("Engine returned an incorrect fen");
+        println!("{}", Eval::eval(&board));
+    }
+
+    fn run_bot(&self) {
+        bot::run_bot().unwrap_or_else(|e| println!("Bot returned an error: {}", e));
     }
 }
 

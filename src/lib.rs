@@ -1,8 +1,7 @@
-use bot::{self, ChessEngine, Move, Board, Perft, Eval};
+use bot::{self, ChessEngine, Move, Board, Perft, Eval, SearchParams};
 use std::io;
 
 const START_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-const DEFAULT_DEPTH: u8 = 6;
 
 pub struct Uci {
     engine: ChessEngine,
@@ -54,7 +53,7 @@ impl Uci {
 List of known commands:
 - help       Show this message
 - uci        Switch to uci mode
-- isready    Check wether engine is ready
+- isready    Check whether engine is ready
 - setoption  Change an engine option
 - ucinewgame Start a new game
 - position   Set a position
@@ -82,7 +81,7 @@ uciok",
         println!("readyok");
     }
 
-    fn setoption(&mut self, args: Vec<&str>) {
+    fn setoption(&mut self, _args: Vec<&str>) {
         self.ready = false;
 
         self.ready = true;
@@ -90,7 +89,7 @@ uciok",
 
     fn ucinewgame(&mut self) {
         self.ready = false;
-
+        self.engine.reset_table();
         self.ready = true;
     }
 
@@ -138,25 +137,27 @@ uciok",
     }
 
     fn go(&mut self, args: Vec<&str>) {
-        let mut depth = DEFAULT_DEPTH;
-
-        if let Some(s) = args.get(1) {
-            if let Some(d) = args.get(2) {
-                let d = d.parse::<u8>().unwrap_or(1);
-                match *s {
-                    "perft" => {
-                        let board = Board::try_from_fen(self.engine.get_board_fen().as_str()).expect("Engine returned an incorrect fen");
-                        Perft::new(board).verb_perft(d, false, false);
-                        return;
-                    },
-                    "depth" => depth = d,
-                    _ => ()
-                }
+        let mut search_params = SearchParams::new();
+        let mut args = args.iter();
+        args.next();
+        while let Some(a) = args.next() {
+            match *a {
+                "perft" => {
+                    let board = Board::try_from_fen(self.engine.get_board_fen().as_str()).expect("Engine returned an incorrect fen");
+                    let depth = args.next().expect("no depth given").parse::<u8>().expect("depth not a byte");
+                    Perft::new(board).verb_perft(depth, true, false);
+                    return;
+                },
+                "movetime" => search_params.move_time = Some(args.next().expect("no movetime given").parse::<u128>().expect("movetime not an integer")),
+                "wtime" => search_params.wtime = args.next().expect("no wtime given").parse::<u128>().expect("wtime not an integer"),
+                "btime" => search_params.btime = args.next().expect("no btime given").parse::<u128>().expect("btime not an integer"),
+                "winc"  => search_params.winc  = args.next().expect("no winc given").parse::<u128>().expect("winc not an integer"),
+                "binc"  => search_params.binc  = args.next().expect("no binc given").parse::<u128>().expect("binc not an integer"),
+                "depth" => search_params.depth = args.next().expect("no depth given").parse::<u8>().expect("depth not a byte"),
+                _ => ()
             }
         }
-        let search_res = self.engine.search(depth);
-        println!("info score cp {}", search_res.1);
-        println!("bestmove {}", search_res.0);
+        self.engine.search(search_params);
     }
 
     fn d(&self) {
